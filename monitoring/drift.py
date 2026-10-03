@@ -1,54 +1,27 @@
 """
-drift.py — behavioral and distributional drift detection.
-
-Compares model prediction distributions and feature distributions
-between a trusted baseline epoch and the current epoch.
+drift.py - PSI-based prediction distribution drift detector.
 """
-
 import logging
 import numpy as np
 from monitoring.anomaly import psi
 
 logger = logging.getLogger(__name__)
 
-
 class DriftDetector:
-    """
-    Stores a baseline prediction distribution and scores subsequent
-    epochs against it using PSI.
-    """
-
-    def __init__(self, cfg: dict):
+    def __init__(self, cfg):
         self._threshold = cfg["security"]["drift_psi_threshold"]
-        self._baseline_probs: np.ndarray | None = None
-        self._baseline_epoch: int = -1
+        self._baseline  = None
 
-    def set_baseline(self, probs: np.ndarray, epoch: int) -> None:
-        self._baseline_probs = probs.copy()
-        self._baseline_epoch = epoch
+    def set_baseline(self, probs, epoch):
+        self._baseline = probs.copy()
         logger.info("Drift baseline set at epoch %d (%d samples).", epoch, len(probs))
 
-    def score(self, probs: np.ndarray) -> dict:
-        """
-        Compute PSI between baseline and current probability distribution.
-
-        Returns dict with psi_value, is_drift, and drift_score (0–1).
-        """
-        if self._baseline_probs is None:
+    def score(self, probs):
+        if self._baseline is None:
             return {"psi_value": 0.0, "is_drift": False, "drift_score": 0.0}
-
-        psi_value = psi(self._baseline_probs, probs)
-        is_drift = psi_value > self._threshold
-
-        # Normalise PSI to a [0, 1] signal (PSI > 0.50 = maxed out)
-        drift_score = min(psi_value / 0.50, 1.0)
-
-        logger.debug(
-            "Drift score: PSI=%.4f  threshold=%.2f  drift=%s",
-            psi_value, self._threshold, is_drift,
-        )
-        return {
-            "psi_value": float(psi_value),
-            "is_drift": bool(is_drift),
-            "drift_score": float(drift_score),
-        }
+        psi_val    = psi(self._baseline, probs)
+        drift_score = min(psi_val / 0.50, 1.0)
+        logger.debug("Drift PSI=%.4f  drift_score=%.4f", psi_val, drift_score)
+        return {"psi_value": float(psi_val),
+                "is_drift":  bool(psi_val > self._threshold),
+                "drift_score": float(drift_score)}

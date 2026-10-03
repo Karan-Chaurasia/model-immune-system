@@ -1,0 +1,73 @@
+2026-10-03 20:58:53,073  INFO      __main__  === Phase 1: Dataset ===
+2026-10-03 20:58:53,073  INFO      training.dataset  Dataset present: data/raw\bank-additional-full.csv
+2026-10-03 20:58:53,189  INFO      training.dataset  Loaded: 41188 rows, 21 cols  sep=';'
+2026-10-03 20:58:53,361  INFO      training.dataset  train=28831  val=4119  test=8238  pos=0.176
+2026-10-03 20:58:53,377  INFO      training.dataset  Saved processed data to data/processed
+2026-10-03 20:58:53,377  INFO      __main__  === Phase 2: Baseline model ===
+2026-10-03 20:58:53,417  INFO      training.model  [baseline] acc=0.6026  prec=0.1946  rec=0.4019  f1=0.2623  auc=0.5398
+2026-10-03 20:58:53,417  INFO      __main__  --- Epoch 1/12 ---
+2026-10-03 20:58:53,472  INFO      training.model  [train_e1] acc=0.6197  prec=0.2102  rec=0.4226  f1=0.2808  auc=0.5668
+2026-10-03 20:58:53,489  INFO      training.model  [val_e1] acc=0.6026  prec=0.1946  rec=0.4019  f1=0.2623  auc=0.5398
+2026-10-03 20:58:53,498  INFO      monitoring.drift  Drift baseline set at epoch 1 (4119 samples).
+2026-10-03 20:58:53,498  INFO      detection.risk_engine  Risk  score=0.0000  raw=LOW  effective=LOW
+2026-10-03 20:58:53,498  INFO      training.checkpoint  Checkpoint saved  epoch=1  state=TRUSTED  path=checkpoints\epoch_0001
+2026-10-03 20:58:53,498  INFO      response.policy_engine  Policy decision  epoch=1  level=LOW  score=0.0000  action=continue
+2026-10-03 20:58:53,498  INFO      __main__  Epoch 1  risk=LOW (0.0000)  bk_rate=0.0000  bk_anomaly=0.0000  val_acc=0.6026
+2026-10-03 20:58:53,498  INFO      __main__  --- Epoch 2/12 ---
+2026-10-03 20:58:53,540  INFO      training.model  [train_e2] acc=0.6197  prec=0.2102  rec=0.4226  f1=0.2808  auc=0.5668
+2026-10-03 20:58:53,556  INFO      training.model  [val_e2] acc=0.6026  prec=0.1946  rec=0.4019  f1=0.2623  auc=0.5398
+2026-10-03 20:58:53,556  INFO      detection.risk_engine  Risk  score=0.0000  raw=LOW  effective=LOW
+2026-10-03 20:58:53,572  INFO      training.checkpoint  Checkpoint saved  epoch=2  state=TRUSTED  path=checkpoints\epoch_0002
+2026-10-03 20:58:53,572  INFO      response.policy_engine  Policy decision  epoch=2  level=LOW  score=0.0000  action=continue
+2026-10-03 20:58:53,572  INFO      __main__  Epoch 2  risk=LOW (0.0000)  bk_rate=0.0000  bk_anomaly=0.0000  val_acc=0.6026
+2026-10-03 20:58:53,572  INFO      __main__  --- Epoch 3/12 ---
+2026-10-03 20:58:53,622  INFO      training.model  [train_e3] acc=0.6197  prec=0.2102  rec=0.4226  f1=0.2808  auc=0.5668
+2026-10-03 20:58:53,640  INFO      training.model  [val_e3] acc=0.6026  prec=0.1946  rec=0.4019  f1=0.2623  auc=0.5398
+2026-10-03 20:58:53,645  INFO      monitoring.anomaly  Backdoor baseline: 0.0000
+2026-10-03 20:58:53,645  INFO      detection.risk_engine  Risk  score=0.0000  raw=LOW  effective=LOW
+2026-10-03 20:58:53,645  INFO      training.checkpoint  Checkpoint saved  epoch=3  state=TRUSTED  path=checkpoints\epoch_0003
+2026-10-03 20:58:53,645  INFO      response.policy_engine  Policy decision  epoch=3  level=LOW  score=0.0000  action=continue
+2026-10-03 20:58:53,645  INFO      __main__  Epoch 3  risk=LOW (0.0000)  bk_rate=0.0000  bk_anomaly=0.0000  val_acc=0.6026
+2026-10-03 20:58:53,645  INFO      __main__  --- Epoch 4/12 ---
+2026-10-03 20:58:53,690  INFO      training.model  [train_e4] acc=0.6197  prec=0.2102  rec=0.4226  f1=0.2808  auc=0.5668
+2026-10-03 20:58:53,714  INFO      training.model  [val_e4] acc=0.6026  prec=0.1946  rec=0.4019  f1=0.2623  auc=0.5398
+2026-10-03 20:58:53,714  INFO      detection.risk_engine  Risk  score=0.0000  raw=LOW  effective=LOW
+2026-10-03 20:58:53,714  INFO      training.checkpoint  Checkpoint saved  epoch=4  state=TRUSTED  path=checkpoints\epoch_0004
+2026-10-03 20:58:53,724  INFO      response.policy_engine  Policy decision  epoch=4  level=LOW  score=0.0000  action=continue
+2026-10-03 20:58:53,724  INFO      __main__  Epoch 4  risk=LOW (0.0000)  bk_rate=0.0000  bk_anomaly=0.0000  val_acc=0.6026
+2026-10-03 20:58:53,724  INFO      __main__  --- Epoch 5/12 ---
+2026-10-03 20:58:53,724  WARNING   __main__  >>> Injecting POISONING attack at epoch 5 <<<
+2026-10-03 20:58:53,724  INFO      attacks.poisoning  Poisoning attack applied: 3459/28831 samples flipped to label 1
+2026-10-03 20:58:53,727  INFO      attribution.suspicious_samples  Registered 3459 suspicious samples at epoch 5 (attack=poisoning).
+2026-10-03 20:58:53,727  WARNING   __main__  >>> Injecting BACKDOOR attack at epoch 5 <<<
+2026-10-03 20:58:53,729  INFO      attacks.backdoor  Backdoor applied: feature='duration' value=-99.0  n=2306/28831  label->1
+2026-10-03 20:58:53,729  INFO      attribution.suspicious_samples  Registered 2306 suspicious samples at epoch 5 (attack=backdoor).
+2026-10-03 20:58:53,814  INFO      training.model  [train_e5] acc=0.7282  prec=0.9996  rec=0.2274  f1=0.3705  auc=0.6077
+2026-10-03 20:58:53,840  INFO      training.model  [val_e5] acc=0.8242  prec=0.0000  rec=0.0000  f1=0.0000  auc=0.4724
+2026-10-03 20:58:53,840  INFO      detection.risk_engine  Risk  score=0.4500  raw=MEDIUM  effective=MEDIUM
+2026-10-03 20:58:53,840  INFO      training.checkpoint  Checkpoint saved  epoch=5  state=MONITORED  path=checkpoints\epoch_0005
+2026-10-03 20:58:53,840  INFO      response.policy_engine  Policy decision  epoch=5  level=MEDIUM  score=0.4500  action=monitor
+2026-10-03 20:58:53,840  INFO      __main__  Epoch 5  risk=MEDIUM (0.4500)  bk_rate=1.0000  bk_anomaly=1.0000  val_acc=0.8242
+2026-10-03 20:58:53,840  INFO      __main__  --- Epoch 6/12 ---
+2026-10-03 20:58:53,923  INFO      training.model  [train_e6] acc=0.7282  prec=0.9996  rec=0.2274  f1=0.3705  auc=0.6077
+2026-10-03 20:58:53,948  INFO      training.model  [val_e6] acc=0.8242  prec=0.0000  rec=0.0000  f1=0.0000  auc=0.4724
+2026-10-03 20:58:53,948  INFO      detection.risk_engine  Risk  score=0.6405  raw=CRITICAL  effective=CRITICAL
+2026-10-03 20:58:53,957  INFO      training.checkpoint  Checkpoint saved  epoch=6  state=SUSPICIOUS  path=checkpoints\epoch_0006
+2026-10-03 20:58:53,957  INFO      response.policy_engine  Policy decision  epoch=6  level=CRITICAL  score=0.6405  action=pause_quarantine_rollback
+2026-10-03 20:58:53,957  INFO      __main__  Epoch 6  risk=CRITICAL (0.6405)  bk_rate=1.0000  bk_anomaly=1.0000  val_acc=0.8242
+2026-10-03 20:58:53,957  CRITICAL  __main__  CRITICAL risk at epoch 6 -- pausing training.
+2026-10-03 20:58:53,957  INFO      training.checkpoint  Checkpoint state updated  epoch=6  SUSPICIOUS → QUARANTINED
+2026-10-03 20:58:53,957  WARNING   response.rollback  Checkpoint epoch=6 QUARANTINED.
+2026-10-03 20:58:53,957  INFO      __main__  Running counterfactual verification...
+2026-10-03 20:58:54,022  INFO      training.model  [counterfactual_with] acc=0.8242  prec=0.0000  rec=0.0000  f1=0.0000  auc=0.4724
+2026-10-03 20:58:54,058  INFO      training.model  [counterfactual_without] acc=0.6018  prec=0.1995  rec=0.4199  f1=0.2705  auc=0.5368
+2026-10-03 20:58:54,058  INFO      attribution.counterfactual  Counterfactual: bk_with=1.0000  bk_without=0.0000  delta=1.0000  confidence=0.4000
+2026-10-03 20:58:54,115  INFO      training.checkpoint  Checkpoint loaded  epoch=4  state=TRUSTED
+2026-10-03 20:58:54,122  INFO      training.model  [rollback_verify] acc=0.6026  prec=0.1946  rec=0.4019  f1=0.2623  auc=0.5398
+2026-10-03 20:58:54,122  INFO      response.rollback  Rollback complete → epoch=4  val_accuracy=0.6026
+2026-10-03 20:58:54,122  INFO      __main__  Rolled back to epoch 4.
+2026-10-03 20:58:54,122  INFO      __main__  === Generating Security Passport ===
+2026-10-03 20:58:54,140  INFO      passport.security_passport  Security Passport saved: logs\security_passport_a52c435e.json
+2026-10-03 20:58:54,140  INFO      __main__  Passport: logs\security_passport_a52c435e.json
+2026-10-03 20:58:54,156  INFO      training.model  [final_test] acc=0.6057  prec=0.2009  rec=0.4181  f1=0.2714  auc=0.5539
+2026-10-03 20:58:54,156  INFO      __main__  === Complete  status=RECOVERED  acc=0.6057  f1=0.2714 ===

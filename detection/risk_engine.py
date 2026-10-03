@@ -1,62 +1,52 @@
 """
-risk_engine.py — aggregate security signals into a single risk score and level.
+risk_engine.py - aggregate security signals into risk score and level.
 
-Risk Score = weighted sum of normalised security signals (all in [0, 1]).
-Risk Level = LOW | MEDIUM | HIGH | CRITICAL  (config-driven thresholds).
-
-This is a prototype/demonstration system. Thresholds and weights are
-configuration values, not peer-reviewed scientific standards.
+Once HIGH is reached the level only escalates, never drops.
+A confirmed attack signal does not become safe because later Z-score
+windows average it down.
 """
-
 import logging
 
 logger = logging.getLogger(__name__)
 
-LEVELS = ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+_LEVEL_ORDER = ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+_peak_level  = "LOW"
 
 
-def compute_risk(signals: dict, cfg: dict) -> dict:
-    """
-    Compute overall risk score and level from individual security signals.
+def _idx(level):
+    return _LEVEL_ORDER.index(level) if level in _LEVEL_ORDER else 0
 
-    signals dict keys (all floats in [0, 1]):
-        poisoning_anomaly
-        backdoor_success_rate
-        behavioral_drift
-        prediction_distribution_anomaly
-        training_trajectory_anomaly
 
-    Returns dict with risk_score, risk_level, and per-signal contributions.
-    """
-    weights = cfg["security"]["risk_weights"]
+def compute_risk(signals, cfg):
+    global _peak_level
+    weights    = cfg["security"]["risk_weights"]
     thresholds = cfg["security"]["thresholds"]
 
-    contributions = {}
     score = 0.0
+    contributions = {}
     for signal, weight in weights.items():
-        value = float(signals.get(signal, 0.0))
-        contribution = weight * value
-        contributions[signal] = {
-            "value": value,
-            "weight": weight,
-            "contribution": contribution,
-        }
-        score += contribution
+        value   = float(signals.get(signal, 0.0))
+        contrib = weight * value
+        contributions[signal] = {"value": value, "weight": weight, "contribution": contrib}
+        score  += contrib
 
     score = min(max(score, 0.0), 1.0)
 
-    if score >= thresholds["critical"]:
-        level = "CRITICAL"
-    elif score >= thresholds["high"]:
-        level = "HIGH"
-    elif score >= thresholds["medium"]:
-        level = "MEDIUM"
-    else:
-        level = "LOW"
+    if   score >= thresholds["critical"]: raw = "CRITICAL"
+    elif score >= thresholds["high"]:     raw = "HIGH"
+    elif score >= thresholds["medium"]:   raw = "MEDIUM"
+    else:                                 raw = "LOW"
 
-    logger.info("Risk  score=%.4f  level=%s", score, level)
-    return {
-        "risk_score": score,
-        "risk_level": level,
-        "signal_contributions": contributions,
-    }
+    # Ratchet: once HIGH, level never drops back down
+    if _idx(raw) > _idx(_peak_level):
+        _peak_level = raw
+    effective = _peak_level if _idx(_peak_level) >= _idx("HIGH") else raw
+
+    logger.info("Risk  score=%.4f  raw=%s  effective=%s", score, raw, effective)
+    return {"risk_score": score, "risk_level": effective,
+            "signal_contributions": contributions}
+
+
+def reset_risk_state():
+    global _peak_level
+    _peak_level = "LOW"

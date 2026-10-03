@@ -1,316 +1,238 @@
 """
-train.py — main training orchestrator.
-
-Implements the full DETECT → PROVE → CONTAIN security loop.
-
-Usage:
-    python training/train.py
-    python training/train.py --config configs/config.yaml
+train.py - main training orchestrator.
+Implements the full DETECT -> PROVE -> CONTAIN security loop.
 """
-
 import argparse
+import io
 import logging
 import os
 import sys
 import numpy as np
 
-# Make project root importable regardless of working directory
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import yaml
 
-from training.dataset import load_config, download_dataset, preprocess, save_processed
-from training.model import build_model, evaluate, prediction_distribution
-from training.checkpoint import (
-    save_checkpoint,
-    load_checkpoint,
-    update_checkpoint_state,
-    list_checkpoints,
-    get_latest_trusted,
-)
-from attacks.poisoning import apply_poisoning
-from attacks.backdoor import apply_backdoor, measure_backdoor_success
+from training.dataset    import load_config, download_dataset, preprocess, save_processed
+from training.model      import build_model, evaluate, prediction_distribution
+from training.checkpoint import (save_checkpoint, load_checkpoint,
+                                  update_checkpoint_state, list_checkpoints,
+                                  get_latest_trusted)
+from attacks.poisoning   import apply_poisoning
+from attacks.backdoor    import apply_backdoor, measure_backdoor_success
 from monitoring.trajectory import TrajectoryLog, TrajectoryRecord
-from monitoring.anomaly import AnomalyDetector
-from monitoring.drift import DriftDetector
-from detection.risk_engine import compute_risk
+from monitoring.anomaly    import AnomalyDetector
+from monitoring.drift      import DriftDetector
+from detection.risk_engine import compute_risk, reset_risk_state
 from attribution.suspicious_samples import SuspiciousSampleTracker
-from attribution.counterfactual import run_counterfactual
-from response.policy_engine import PolicyEngine
-from response.rollback import RollbackManager
+from attribution.counterfactual      import run_counterfactual
+from response.policy_engine  import PolicyEngine
+from response.rollback       import RollbackManager
 from passport.security_passport import generate_passport, save_passport
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler("logs/train.log"),
-    ],
-)
+
+def _setup_logging(log_dir):
+    os.makedirs(log_dir, exist_ok=True)
+    fmt = logging.Formatter("%(asctime)s  %(levelname)-8s  %(name)s  %(message)s")
+    if hasattr(sys.stdout, "buffer"):
+        stream = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    else:
+        stream = sys.stdout
+    sh = logging.StreamHandler(stream)
+    sh.setFormatter(fmt)
+    fh = logging.FileHandler(os.path.join(log_dir, "train.log"), encoding="utf-8")
+    fh.setFormatter(fmt)
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    root.handlers.clear()
+    root.addHandler(sh)
+    root.addHandler(fh)
+
+
 logger = logging.getLogger(__name__)
 
 
-def run(cfg: dict) -> None:
-    """Full training pipeline."""
+def run(cfg):
     seed = cfg["project"]["seed"]
     np.random.seed(seed)
+    _setup_logging(cfg["training"]["log_dir"])
+    reset_risk_state()
 
-    # ------------------------------------------------------------------ #
-    # Phase 1 — Dataset                                                    #
-    # ------------------------------------------------------------------ #
+    # ---- Dataset ----
     logger.info("=== Phase 1: Dataset ===")
     filepath = download_dataset(cfg)
-    data = preprocess(filepath, cfg)
+    data     = preprocess(filepath, cfg)
     save_processed(data)
 
-    X_train = data["X_train"]
-    y_train = data["y_train"]
-    X_val = data["X_val"]
-    y_val = data["y_val"]
-    X_test = data["X_test"]
-    y_test = data["y_test"]
-    sample_ids = data["sample_ids"]
+    X_train = data["X_train"];  y_train = data["y_train"]
+    X_val   = data["X_val"];    y_val   = data["y_val"]
+    X_test  = data["X_test"];   y_test  = data["y_test"]
+    sample_ids    = data["sample_ids"]
     feature_names = data["feature_names"]
 
-    # ------------------------------------------------------------------ #
-    # Phase 2 — Baseline model                                            #
-    # ------------------------------------------------------------------ #
+    # ---- Baseline ----
     logger.info("=== Phase 2: Baseline model ===")
     model = build_model(cfg)
-    baseline_metrics = evaluate(
-        model.fit(X_train, y_train), X_val, y_val, label="baseline"
-    )
+    model.fit(X_train, y_train)
+    evaluate(model, X_val, y_val, label="baseline")
 
-    # ------------------------------------------------------------------ #
-    # Setup security components                                            #
-    # ------------------------------------------------------------------ #
-    trajectory_log = TrajectoryLog(log_dir=cfg["training"]["log_dir"])
-    anomaly_detector = AnomalyDetector(cfg)
-    drift_detector = DriftDetector(cfg)
-    suspicious_tracker = SuspiciousSampleTracker(log_dir=cfg["training"]["log_dir"])
-    policy = PolicyEngine(cfg, log_dir=cfg["training"]["log_dir"])
-    rollback_mgr = RollbackManager()
+    # ---- Security components ----
+    traj_log  = TrajectoryLog(log_dir=cfg["training"]["log_dir"])
+    anomaly   = AnomalyDetector(cfg)
+    drift     = DriftDetector(cfg)
+    sus_track = SuspiciousSampleTracker(log_dir=cfg["training"]["log_dir"])
+    policy    = PolicyEngine(cfg, log_dir=cfg["training"]["log_dir"])
+    rollback  = RollbackManager()
 
-    total_epochs = cfg["training"]["epochs"]
-    poison_epoch = cfg["attacks"]["poisoning"]["inject_at_epoch"]
+    total_epochs   = cfg["training"]["epochs"]
+    poison_epoch   = cfg["attacks"]["poisoning"]["inject_at_epoch"]
     backdoor_epoch = cfg["attacks"]["backdoor"]["inject_at_epoch"]
 
-    # Working training data (may be replaced after attack injection)
     X_work = X_train.copy()
     y_work = y_train.copy()
     ids_work = sample_ids.copy()
 
-    # Collected attack metadata
-    poison_meta: dict | None = None
-    backdoor_meta: dict | None = None
+    training_paused       = False
+    rollback_result       = None
+    counterfactual_result = None
+    poison_meta           = None
+    backdoor_meta         = None
 
-    training_paused = False
-    rollback_result: dict | None = None
-    counterfactual_result: dict | None = None
-
-    # Baseline drift reference (set after epoch 1)
-    baseline_probs: np.ndarray | None = None
-
-    # ------------------------------------------------------------------ #
-    # Phase 3–14 — Epoch loop                                             #
-    # ------------------------------------------------------------------ #
+    # ---- Epoch loop ----
     for epoch in range(1, total_epochs + 1):
         logger.info("--- Epoch %d/%d ---", epoch, total_epochs)
-
-        # --- Inject attacks at configured epoch ---
-        attack_active_this_epoch = None
+        attack_active = None
 
         if epoch == poison_epoch and cfg["attacks"]["poisoning"]["enabled"]:
             logger.warning(">>> Injecting POISONING attack at epoch %d <<<", epoch)
-            X_work, y_work, poison_meta = apply_poisoning(
-                X_work, y_work, ids_work, cfg
-            )
-            suspicious_tracker.register(
-                epoch=epoch,
-                sample_ids=poison_meta["poisoned_sample_ids"],
-                attack_type="poisoning",
-                evidence=poison_meta,
-            )
-            attack_active_this_epoch = "poisoning"
+            X_work, y_work, poison_meta = apply_poisoning(X_work, y_work, ids_work, cfg)
+            sus_track.register(epoch, poison_meta["poisoned_sample_ids"], "poisoning", poison_meta)
+            attack_active = "poisoning"
 
         if epoch == backdoor_epoch and cfg["attacks"]["backdoor"]["enabled"]:
             logger.warning(">>> Injecting BACKDOOR attack at epoch %d <<<", epoch)
             X_work, y_work, backdoor_meta = apply_backdoor(
-                X_work, y_work, ids_work, feature_names, cfg
-            )
-            suspicious_tracker.register(
-                epoch=epoch,
-                sample_ids=backdoor_meta["triggered_sample_ids"],
-                attack_type="backdoor",
-                evidence=backdoor_meta,
-            )
-            if attack_active_this_epoch:
-                attack_active_this_epoch = "poisoning+backdoor"
-            else:
-                attack_active_this_epoch = "backdoor"
+                X_work, y_work, ids_work, feature_names, cfg)
+            sus_track.register(epoch, backdoor_meta["triggered_sample_ids"], "backdoor", backdoor_meta)
+            attack_active = "poisoning+backdoor" if attack_active else "backdoor"
 
-        # --- Train one epoch (refit on current working data) ---
+        # Train
         model = build_model(cfg)
         model.fit(X_work, y_work)
 
-        # --- Evaluate ---
-        train_metrics = evaluate(model, X_work, y_work, label=f"train_e{epoch}")
-        val_metrics = evaluate(model, X_val, y_val, label=f"val_e{epoch}")
-        pred_dist = prediction_distribution(model, X_val)
+        # Evaluate
+        train_m = evaluate(model, X_work, y_work,  label=f"train_e{epoch}")
+        val_m   = evaluate(model, X_val,  y_val,   label=f"val_e{epoch}")
+        pdist   = prediction_distribution(model, X_val)
         bk_rate = measure_backdoor_success(model, X_val, feature_names, cfg)
 
-        # --- Set drift baseline after the first epoch ---
         if epoch == 1:
-            probs = model.predict_proba(X_val)[:, 1]
-            drift_detector.set_baseline(probs, epoch)
-            baseline_probs = probs
+            drift.set_baseline(model.predict_proba(X_val)[:, 1], epoch)
 
-        # --- Drift and anomaly scoring ---
-        current_probs = model.predict_proba(X_val)[:, 1]
-        drift_scores = drift_detector.score(current_probs)
-        anomaly_scores = anomaly_detector.score(
-            val_metrics["accuracy"],
-            bk_rate,
-            pred_dist["positive_fraction"],
-        )
+        cur_probs    = model.predict_proba(X_val)[:, 1]
+        drift_scores = drift.score(cur_probs)
+        anom_scores  = anomaly.score(val_m["accuracy"], bk_rate, pdist["positive_fraction"])
 
-        # --- Risk engine ---
         signals = {
-            "poisoning_anomaly": anomaly_scores["accuracy_anomaly_score"],
-            "backdoor_success_rate": bk_rate,
-            "behavioral_drift": drift_scores["drift_score"],
-            "prediction_distribution_anomaly": anomaly_scores["prediction_distribution_anomaly"],
-            "training_trajectory_anomaly": anomaly_scores["accuracy_anomaly_score"],
+            "poisoning_anomaly":               anom_scores["accuracy_anomaly_score"],
+            "backdoor_success_rate":           anom_scores["backdoor_anomaly_score"],
+            "behavioral_drift":                drift_scores["drift_score"],
+            "prediction_distribution_anomaly": anom_scores["prediction_distribution_anomaly"],
+            "training_trajectory_anomaly":     anom_scores["accuracy_anomaly_score"],
         }
         risk = compute_risk(signals, cfg)
 
-        # --- Classify checkpoint state ---
-        if risk["risk_level"] == "CRITICAL":
-            ckpt_state = "SUSPICIOUS"
-        elif risk["risk_level"] in ("HIGH", "MEDIUM"):
-            ckpt_state = "MONITORED"
-        else:
-            ckpt_state = "TRUSTED"
+        if   risk["risk_level"] == "CRITICAL":         ckpt_state = "SUSPICIOUS"
+        elif risk["risk_level"] in ("HIGH", "MEDIUM"):  ckpt_state = "MONITORED"
+        else:                                           ckpt_state = "TRUSTED"
 
-        # --- Save checkpoint ---
-        save_checkpoint(
-            model=model,
-            epoch=epoch,
-            metrics=val_metrics,
-            state=ckpt_state,
-            cfg=cfg,
-            extra={
-                "risk_score": risk["risk_score"],
-                "risk_level": risk["risk_level"],
-                "backdoor_success_rate": bk_rate,
-                "attack_active": attack_active_this_epoch,
-            },
-        )
+        save_checkpoint(model, epoch, val_m, ckpt_state, cfg, extra={
+            "risk_score": risk["risk_score"],
+            "risk_level": risk["risk_level"],
+            "backdoor_success_rate": bk_rate,
+            "backdoor_anomaly_score": anom_scores["backdoor_anomaly_score"],
+            "attack_active": attack_active,
+        })
 
-        # --- Record trajectory ---
         rec = TrajectoryRecord(
             epoch=epoch,
-            train_accuracy=train_metrics["accuracy"],
-            val_accuracy=val_metrics["accuracy"],
-            val_precision=val_metrics["precision"],
-            val_recall=val_metrics["recall"],
-            val_f1=val_metrics["f1"],
-            val_auc=val_metrics["auc"],
+            train_accuracy=train_m["accuracy"],
+            val_accuracy=val_m["accuracy"],
+            val_precision=val_m["precision"],
+            val_recall=val_m["recall"],
+            val_f1=val_m["f1"],
+            val_auc=val_m["auc"],
             backdoor_success_rate=bk_rate,
-            positive_fraction=pred_dist["positive_fraction"],
-            prob_mean=pred_dist["prob_mean"],
-            prob_std=pred_dist["prob_std"],
-            poisoning_anomaly_score=anomaly_scores["accuracy_anomaly_score"],
+            positive_fraction=pdist["positive_fraction"],
+            prob_mean=pdist["prob_mean"],
+            prob_std=pdist["prob_std"],
+            poisoning_anomaly_score=anom_scores["accuracy_anomaly_score"],
             behavioral_drift_score=drift_scores["drift_score"],
-            prediction_distribution_anomaly=anomaly_scores["prediction_distribution_anomaly"],
-            training_trajectory_anomaly=anomaly_scores["accuracy_anomaly_score"],
+            prediction_distribution_anomaly=anom_scores["prediction_distribution_anomaly"],
+            training_trajectory_anomaly=anom_scores["accuracy_anomaly_score"],
             risk_score=risk["risk_score"],
             risk_level=risk["risk_level"],
             checkpoint_state=ckpt_state,
-            attack_active=attack_active_this_epoch,
+            attack_active=attack_active,
         )
-        trajectory_log.append(rec)
+        traj_log.append(rec)
+        policy.evaluate(epoch, risk["risk_level"], risk["risk_score"])
 
-        # --- Policy engine ---
-        response = policy.evaluate(epoch, risk["risk_level"], risk["risk_score"])
+        logger.info("Epoch %d  risk=%s (%.4f)  bk_rate=%.4f  bk_anomaly=%.4f  val_acc=%.4f",
+                    epoch, risk["risk_level"], risk["risk_score"],
+                    bk_rate, anom_scores["backdoor_anomaly_score"], val_m["accuracy"])
 
-        # --- CRITICAL response: pause, quarantine, counterfactual, rollback ---
         if policy.should_pause(risk["risk_level"]) and not training_paused:
-            logger.critical(
-                "CRITICAL risk at epoch %d — pausing training.", epoch
-            )
+            logger.critical("CRITICAL risk at epoch %d -- pausing training.", epoch)
             training_paused = True
+            rollback.quarantine(epoch, cfg)
 
-            # Quarantine current checkpoint
-            rollback_mgr.quarantine(epoch, cfg)
-
-            # Run counterfactual verification
-            all_suspicious_ids = suspicious_tracker.all_sample_ids()
-            if all_suspicious_ids:
+            all_sus = sus_track.all_sample_ids()
+            if all_sus:
                 logger.info("Running counterfactual verification...")
                 counterfactual_result = run_counterfactual(
-                    X_work, y_work, X_val, y_val,
-                    all_suspicious_ids, feature_names, cfg,
-                )
+                    X_work, y_work, X_val, y_val, all_sus, feature_names, cfg)
 
-            # Roll back to latest trusted checkpoint
-            rollback_result = rollback_mgr.rollback(X_val, y_val, cfg)
+            rollback_result = rollback.rollback(X_val, y_val, cfg)
             if rollback_result["success"]:
                 model = rollback_result["model"]
-                logger.info("Restored model from epoch %d.", rollback_result["restored_epoch"])
+                logger.info("Rolled back to epoch %d.", rollback_result["restored_epoch"])
             break
 
-        logger.info(
-            "Epoch %d complete  risk=%s (%.4f)  bk=%.4f  val_acc=%.4f",
-            epoch, risk["risk_level"], risk["risk_score"], bk_rate, val_metrics["accuracy"],
-        )
-
-    # ------------------------------------------------------------------ #
-    # Phase 10 — Security Passport                                        #
-    # ------------------------------------------------------------------ #
+    # ---- Security Passport ----
     logger.info("=== Generating Security Passport ===")
-
-    final_status = "RECOVERED" if (rollback_result and rollback_result["success"]) else "HEALTHY"
-    if training_paused and not rollback_result:
+    if training_paused and rollback_result and rollback_result["success"]:
+        final_status = "RECOVERED"
+    elif training_paused:
         final_status = "QUARANTINED"
+    else:
+        final_status = "HEALTHY"
 
     passport = generate_passport(
         cfg=cfg,
-        trajectory_records=trajectory_log.as_dicts(),
+        trajectory_records=traj_log.as_dicts(),
         checkpoint_list=list_checkpoints(cfg),
-        suspicious_samples=suspicious_tracker.all(),
+        suspicious_samples=sus_track.all(),
         counterfactual_result=counterfactual_result,
         response_events=policy.all_events(),
         rollback_result=rollback_result,
         final_model_status=final_status,
     )
-
-    json_path, text_path = save_passport(passport, out_dir=cfg["training"]["log_dir"])
+    json_path, _ = save_passport(passport, out_dir=cfg["training"]["log_dir"])
     logger.info("Passport: %s", json_path)
-    logger.info("Passport (text): %s", text_path)
 
-    # Final test-set evaluation
-    test_metrics = evaluate(model, X_test, y_test, label="final_test")
-    logger.info("=== Training Complete ===")
-    logger.info("Final status: %s", final_status)
-    logger.info(
-        "Test set  acc=%.4f  f1=%.4f  auc=%.4f",
-        test_metrics["accuracy"], test_metrics["f1"], test_metrics["auc"],
-    )
+    test_m = evaluate(model, X_test, y_test, label="final_test")
+    logger.info("=== Complete  status=%s  acc=%.4f  f1=%.4f ===",
+                final_status, test_m["accuracy"], test_m["f1"])
 
     return passport
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Model Immune System — Training Pipeline")
-    parser.add_argument(
-        "--config", default="configs/config.yaml",
-        help="Path to config YAML (default: configs/config.yaml)"
-    )
+    parser = argparse.ArgumentParser(description="Model Immune System")
+    parser.add_argument("--config", default="configs/config.yaml")
     args = parser.parse_args()
-    cfg = load_config(args.config)
-    run(cfg)
+    run(load_config(args.config))
 
 
 if __name__ == "__main__":
