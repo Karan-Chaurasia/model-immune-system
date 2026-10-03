@@ -1,0 +1,72 @@
+project:
+  name: "Model Immune System"
+  version: "1.0.0"
+  description: "Training-time AI security and resilience system"
+  seed: 42
+
+dataset:
+  name: "UCI Bank Marketing"
+  url: "https://archive.ics.uci.edu/ml/machine-learning-databases/00222/bank-additional-full.csv"
+  filename: "bank-additional-full.csv"
+  target_column: "y"
+  test_size: 0.20
+  val_size: 0.10
+  separator: ";"
+
+model:
+  type: "logistic_regression"      # logistic_regression | random_forest | xgboost
+  max_iter: 1000
+  C: 1.0
+  random_state: 42
+
+training:
+  epochs: 10                       # checkpoint intervals
+  batch_size: 500
+  checkpoint_dir: "checkpoints"
+  log_dir: "logs"
+
+attacks:
+  poisoning:
+    enabled: true
+    inject_at_epoch: 4             # inject before this epoch
+    poison_fraction: 0.08          # fraction of training data to corrupt
+    target_label: 1
+    seed: 123
+  backdoor:
+    enabled: true
+    inject_at_epoch: 4
+    trigger_feature: "duration"
+    trigger_value: 9999
+    trigger_rate: 0.05             # fraction of training data to backdoor
+    target_label: 1
+    seed: 456
+
+security:
+  risk_weights:
+    poisoning_anomaly: 0.30
+    backdoor_success_rate: 0.25
+    behavioral_drift: 0.20
+    prediction_distribution_anomaly: 0.15
+    training_trajectory_anomaly: 0.10
+  thresholds:
+    low: 0.25
+    medium: 0.50
+    high: 0.70
+    critical: 0.85
+  anomaly_zscore_threshold: 2.5
+  drift_psi_threshold: 0.20
+
+response:
+  mode: "automatic"                # automatic | manual
+  actions:
+    low: "continue"
+    medium: "monitor"
+    high: "review"
+    critical: "pause_quarantine_rollback"
+
+api:
+  host: "0.0.0.0"
+  port: 8000
+
+dashboard:
+  port: 8501

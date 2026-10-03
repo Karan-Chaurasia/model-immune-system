@@ -1,0 +1,43 @@
+# Rename this file to .gitignore before committing
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Data (large files)
+data/raw/
+data/poisoned/
+
+# Checkpoints
+checkpoints/
+
+# Logs and generated artifacts
+logs/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+
+# MLflow
+mlruns/
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/

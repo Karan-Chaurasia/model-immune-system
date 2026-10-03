@@ -1,0 +1,46 @@
+version: "3.9"
+
+services:
+  training:
+    build: .
+    container_name: mis-training
+    command: python training/train.py --config configs/config.yaml
+    volumes:
+      - ./data:/app/data
+      - ./checkpoints:/app/checkpoints
+      - ./logs:/app/logs
+    environment:
+      - MIS_CONFIG=configs/config.yaml
+    restart: "no"
+
+  api:
+    build: .
+    container_name: mis-api
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./checkpoints:/app/checkpoints
+      - ./logs:/app/logs
+    environment:
+      - MIS_CONFIG=configs/config.yaml
+    restart: unless-stopped
+    depends_on:
+      - training
+
+  dashboard:
+    build: .
+    container_name: mis-dashboard
+    command: streamlit run dashboard/app.py --server.port 8501 --server.address 0.0.0.0
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data
+      - ./checkpoints:/app/checkpoints
+      - ./logs:/app/logs
+    environment:
+      - MIS_CONFIG=configs/config.yaml
+    restart: unless-stopped
+    depends_on:
+      - api
