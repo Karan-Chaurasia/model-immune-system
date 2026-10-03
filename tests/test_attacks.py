@@ -17,6 +17,15 @@ from training.model import build_model
 MINIMAL_CFG = {
     "project": {"seed": 42, "name": "test", "version": "0.0.1"},
     "model": {"type": "logistic_regression", "max_iter": 100, "C": 1.0, "random_state": 42},
+    "dataset": {
+        "name": "test-dataset",
+        "url": "https://example.com/test.csv",
+        "filename": "test.csv",
+        "target_column": "y",
+        "test_size": 0.20,
+        "val_size": 0.10,
+        "separator": ";",
+    },
     "attacks": {
         "poisoning": {
             "enabled": True,

@@ -130,7 +130,7 @@ def preprocess(filepath: str, cfg: dict) -> dict:
     y = df[target_col].values
 
     # Encode categorical columns
-    cat_cols = X.select_dtypes(include=["object"]).columns.tolist()
+    cat_cols = X.select_dtypes(include=["object", "str"]).columns.tolist()
     encoders = {}
     for col in cat_cols:
         le = LabelEncoder()

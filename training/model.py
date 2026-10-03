@@ -25,7 +25,6 @@ def build_model(cfg: dict):
             C=cfg["model"]["C"],
             random_state=seed,
             solver="lbfgs",
-            multi_class="auto",
         )
     if model_type == "random_forest":
         return RandomForestClassifier(
