@@ -157,7 +157,7 @@ if not traj_df.empty:
 
     # Incident banner
     if fstatus == "RECOVERED":
-        st.success("LAST INCIDENT: CRITICAL — Backdoor + Poisoning  |  RESPONSE: PAUSED → QUARANTINED → ROLLED BACK TO TRUSTED EPOCH")
+        st.success("LAST INCIDENT: CRITICAL â€” Backdoor + Poisoning  |  RESPONSE: PAUSED â†’ QUARANTINED â†’ ROLLED BACK TO TRUSTED EPOCH")
     elif fstatus == "HEALTHY":
         st.success("No security incidents detected during this training run.")
 else:
@@ -217,7 +217,7 @@ if checkpoints:
              "Val Acc":f'{c["metrics"].get("accuracy",0):.4f}',
              "Timestamp":c["timestamp"]} for c in checkpoints]
     df_c = pd.DataFrame(rows)
-    st.dataframe(df_c.style.applymap(
+    st.dataframe(df_c.style.map(
         lambda v: f"color:{STATE_COLOR.get(v,'#888')};font-weight:bold"
         if v in STATE_COLOR else "", subset=["State"]),
         use_container_width=True, height=200)
