@@ -26,8 +26,6 @@ services:
     environment:
       - MIS_CONFIG=configs/config.yaml
     restart: unless-stopped
-    depends_on:
-      - training
 
   dashboard:
     build: .
@@ -39,8 +37,7 @@ services:
       - ./data:/app/data
       - ./checkpoints:/app/checkpoints
       - ./logs:/app/logs
+      - ./plots:/app/plots
     environment:
       - MIS_CONFIG=configs/config.yaml
     restart: unless-stopped
-    depends_on:
-      - api

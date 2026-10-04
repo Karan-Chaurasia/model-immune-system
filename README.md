@@ -2,98 +2,149 @@
 
 **Protect AI while it is learning.**
 
-> IBM Z Datathon 2026 — *AI Secured: Innovation Without Exposure*
+> IBM Z Datathon 2026 — Theme: *AI Secured: Innovation Without Exposure*
+> Team: clauseX
 
 ---
 
-## What it does
+## One-line pitch
 
-Model Immune System is a **training-time AI security and resilience system**.
-It continuously observes a machine learning model while it trains, detects
-poisoning attacks and backdoors, traces suspicious behavior back to the
-responsible training data, verifies that cause using counterfactual
-re-training experiments, and automatically pauses, quarantines, and rolls
-back unsafe training.
-
-The core security loop is:
-
-```
-DETECT → PROVE → CONTAIN
-```
-
-Traditional ML security asks *"Is this model safe?"* after training.
-Model Immune System asks *"Is this model staying safe while it learns?"*
+> Traditional ML security asks whether a trained model is safe.
+> **Model Immune System asks whether the model is staying safe while it learns.**
 
 ---
 
-## Architecture
+## The demo in 10 steps
+
+```
+1.  Start training on enterprise-style tabular data
+2.  Establish trusted baseline (epochs 1-4: TRUSTED checkpoints)
+3.  Inject data poisoning + backdoor attack at epoch 5
+4.  Security system detects behavioral shift
+5.  Risk escalates: LOW -> MEDIUM -> CRITICAL
+6.  Counterfactual verification:
+      bk_with_suspects    = 1.000
+      bk_without_suspects = 0.000   (backdoor disappears)
+7.  Training automatically paused
+8.  Unsafe checkpoint quarantined
+9.  Rollback to last TRUSTED checkpoint (epoch 4)
+10. Security Passport generated
+    Final status: RECOVERED
+```
+
+---
+
+## Security loop
+
+```
+DETECT -> PROVE -> CONTAIN
+```
+
+| Step | What happens |
+|---|---|
+| **DETECT** | Z-score anomaly, PSI drift, backdoor probe measure behavioral change |
+| **PROVE** | Counterfactual: remove suspects, re-evaluate; delta = 1.0 confirms attribution |
+| **CONTAIN** | Kill switch pauses training, quarantines checkpoint, rolls back to TRUSTED |
+
+---
+
+## Verified run output
+
+```
+Epoch 1  risk=LOW      (0.0000)  bk_rate=0.0000  val_acc=0.6026  state=TRUSTED
+Epoch 2  risk=LOW      (0.0000)  bk_rate=0.0000  val_acc=0.6026  state=TRUSTED
+Epoch 3  risk=LOW      (0.0000)  bk_rate=0.0000  val_acc=0.6026  state=TRUSTED
+Epoch 4  risk=LOW      (0.0000)  bk_rate=0.0000  val_acc=0.6026  state=TRUSTED
+
+>>> Injecting POISONING attack at epoch 5 <<<
+>>> Injecting BACKDOOR  attack at epoch 5 <<<
+
+Epoch 5  risk=MEDIUM   (0.4500)  bk_rate=1.0000  val_acc=0.8242  state=MONITORED
+Epoch 6  risk=CRITICAL (0.6405)  bk_rate=1.0000  val_acc=0.8242  state=SUSPICIOUS
+
+CRITICAL risk at epoch 6 -- pausing training.
+Checkpoint epoch=6: SUSPICIOUS -> QUARANTINED
+Counterfactual: bk_with=1.0000  bk_without=0.0000  delta=1.0000  confidence=0.40
+Rollback complete -> epoch=4  val_accuracy=0.6026
+
+=== Complete  status=RECOVERED  acc=0.6057  f1=0.2714 ===
+```
+
+---
+
+## Repository structure
 
 ```
 model-immune-system/
-├── configs/            Configuration files
-├── data/               Dataset (raw / processed / poisoned)
-├── training/           Dataset loader, model factory, checkpointing, orchestrator
-├── attacks/            Poisoning, backdoor, and drift simulation
-├── monitoring/         Trajectory logging, anomaly detection, drift detection
-├── detection/          Risk engine (aggregates all security signals)
-├── attribution/        Suspicious sample tracker, counterfactual verification
-├── response/           Policy engine (kill switch), rollback manager
-├── passport/           Security Passport generator
-├── api/                FastAPI REST backend
-├── dashboard/          Streamlit Security Operations Center
-└── tests/              Unit tests + end-to-end integration test
+  configs/           config.yaml (all parameters)
+  training/          dataset.py, model.py, checkpoint.py, train.py
+  attacks/           poisoning.py, backdoor.py
+  monitoring/        trajectory.py, anomaly.py, drift.py
+  detection/         risk_engine.py
+  attribution/       suspicious_samples.py, counterfactual.py
+  response/          policy_engine.py, rollback.py
+  passport/          security_passport.py
+  api/               main.py (FastAPI)
+  dashboard/         app.py (Streamlit SOC)
+  notebooks/         generate_plots.py
+  tests/             test_attacks.py, test_security.py, test_edge_cases.py
+  plots/             8 evidence figures (generated)
+  Dockerfile
+  docker-compose.yml
+  requirements.txt
 ```
 
 ---
 
 ## Quick start
 
-### 1 — Prerequisites
-
-- Python 3.11 or 3.12
-- pip
-
-### 2 — Install
-
 ```bash
+git clone https://github.com/Karan-Chaurasia/model-immune-system.git
 cd model-immune-system
-pip install -r requirements.txt
+python -m venv .venv
+
+# Windows
+.venv\Scripts\pip install -r requirements.txt
+.venv\Scripts\python training\train.py
+
+# Linux / Mac / LinuxONE
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python training/train.py
 ```
 
-### 3 — Run the training pipeline
-
-```bash
-python training/train.py
-```
-
-The first run downloads the UCI Bank Marketing dataset automatically.
-If the download fails the pipeline falls back to a synthetic dataset.
-
-### 4 — View the dashboard
+### Dashboard
 
 ```bash
 streamlit run dashboard/app.py
+# Open http://localhost:8501
 ```
 
-Open [http://localhost:8501](http://localhost:8501).
-
-### 5 — Start the API
+### API
 
 ```bash
 uvicorn api.main:app --reload
+# Docs at http://localhost:8000/docs
 ```
 
-API docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+### Generate evidence plots
+
+```bash
+python notebooks/generate_plots.py
+# Saves 8 PNG figures to plots/
+```
 
 ---
 
-## Run tests
+## Tests
 
 ```bash
 # Unit tests
 pytest tests/test_attacks.py tests/test_security.py -v
 
-# Integration test (runs the full pipeline; takes ~30 s)
+# Edge cases + no-false-positive test
+pytest tests/test_edge_cases.py -v
+
+# Full integration test
 pytest tests/test_integration.py -v -m integration
 ```
 
@@ -102,100 +153,74 @@ pytest tests/test_integration.py -v -m integration
 ## Docker
 
 ```bash
-# Build and run everything
 docker compose up --build
-
-# Training only
-docker compose run training
-
-# Dashboard at http://localhost:8501
-# API at http://localhost:8000/docs
+# Dashboard: http://localhost:8501
+# API:       http://localhost:8000/docs
 ```
+
+---
+
+## IBM LinuxONE
+
+The entire system runs inside Docker containers on a standard Linux kernel,
+making it directly portable to IBM LinuxONE (s390x).
+
+```bash
+# Build for LinuxONE s390x
+docker buildx build --platform linux/s390x -t model-immune-system:linuxone .
+docker compose up --build
+```
+
+**Why LinuxONE matters here:**
+All security telemetry (checkpoints, trajectory logs, counterfactual evidence,
+Security Passport) remains inside the controlled infrastructure boundary.
+Model training security monitoring runs within the trusted enterprise environment
+without exposing sensitive model internals to external systems.
 
 ---
 
 ## Configuration
 
-All parameters live in [`configs/config.yaml`](configs/config.yaml).
-Nothing is hard-coded.
+All parameters are in `configs/config.yaml`. Nothing is hard-coded.
 
-Key settings:
-
-| Setting | Default | Description |
+| Key | Default | Description |
 |---|---|---|
-| `training.epochs` | 10 | Number of training rounds |
-| `attacks.poisoning.inject_at_epoch` | 4 | When to inject the poisoning attack |
-| `attacks.poisoning.poison_fraction` | 0.08 | Fraction of training data to corrupt |
-| `attacks.backdoor.trigger_feature` | `duration` | Which feature the trigger modifies |
-| `security.thresholds.critical` | 0.85 | Risk score that triggers automatic pause |
+| `training.epochs` | 12 | Training rounds |
+| `attacks.poisoning.inject_at_epoch` | 5 | When to inject poisoning |
+| `attacks.poisoning.poison_fraction` | 0.12 | Fraction of data corrupted |
+| `attacks.backdoor.trigger_feature` | `duration` | Trigger feature |
+| `attacks.backdoor.trigger_value` | -99.0 | Impossible scaled value |
+| `security.thresholds.critical` | 0.62 | Score that triggers automatic pause |
 | `response.mode` | `automatic` | `automatic` or `manual` |
-
----
-
-## IBM LinuxONE deployment
-
-The entire application runs inside Docker containers on a standard Linux
-kernel, making it directly portable to IBM LinuxONE (s390x).
-
-```bash
-# On LinuxONE — build for s390x
-docker buildx build --platform linux/s390x -t model-immune-system:linuxone .
-
-# Or use docker compose with the same compose file
-docker compose up --build
-```
-
-All security telemetry (checkpoints, trajectory logs, response events,
-Security Passport) remains inside the container/volume — the sensitive
-model training metadata never leaves the controlled infrastructure boundary.
-This demonstrates a key LinuxONE security value proposition: enterprise AI
-training security inside a trusted compute environment.
 
 ---
 
 ## Security Passport
 
-At the end of every training run the system generates an
-**AI Security Passport** — a complete audit trail containing:
-
+Every training run generates a full audit trail:
 - Model identity and version
 - Dataset provenance
-- Training and attack configuration
-- Full checkpoint history with state transitions
-- Security risk trajectory
-- Suspicious samples and batch IDs
-- Counterfactual evidence
-- Response actions taken
+- Attack configuration
+- Checkpoint history with state transitions (TRUSTED/MONITORED/SUSPICIOUS/QUARANTINED)
+- Security risk trajectory (all epochs)
+- Suspicious sample/batch IDs
+- Counterfactual evidence (with vs without suspects)
+- All response actions
 - Rollback information
-- Final model security status
+- Final model status
 
-The passport is written to `logs/security_passport_<id>.json` and
-`logs/security_passport_<id>.txt`.
-
----
-
-## Demo narrative
-
-```
-1.  Start clean training on UCI Bank Marketing dataset
-2.  Establish trusted baseline — checkpoints marked TRUSTED
-3.  At epoch 4: inject poisoning + backdoor attack
-4.  Model behavior begins shifting — backdoor success rate rises
-5.  Security signals elevate — risk moves from LOW → MEDIUM → HIGH → CRITICAL
-6.  Counterfactual verification: removing suspects reduces backdoor rate
-7.  Attribution confidence confirmed
-8.  Automatic pause: current checkpoint QUARANTINED
-9.  Roll back to last TRUSTED checkpoint
-10. Verify recovered model health
-11. Generate Security Passport
-```
+Saved to `logs/security_passport_<id>.json` and `.txt`.
 
 ---
 
-## Team
+## Attribution note
 
-IBM Z Datathon 2026
+The counterfactual result provides **evidence supporting attribution**, not
+absolute causal proof. A confidence of 0.40 means: removing the suspected
+samples causes the suspicious behavior to disappear. This is consistent with
+those samples being the source, but the system clearly labels this as
+*counterfactual evidence*, not certainty.
 
 ---
 
-*Protect AI while it is learning.*
+## Team clauseX — IBM Z Datathon 2026
